@@ -1,0 +1,7 @@
+
+.vscode/
+cloud_archiver.egg-info/
+build/
+dist/
+publish/src/
+*.pyc

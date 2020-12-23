@@ -1,0 +1,9 @@
+{
+  "author": "Pixegami",
+  "email": "pixegami@gmail.com",
+  "description": "A nice package.",
+  "url": "github.com/pixegami",
+  "scripts": [
+    "px-archive = cloud_archiver:main"
+  ]
+}
