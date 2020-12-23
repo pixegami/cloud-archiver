@@ -33,7 +33,7 @@ def test_traverse():
 
     # Print the result.
     archiver.display_paths(SAMPLE_DATA_PATH, result)
-    assert(n_root_paths == 12)  # Expect 12 root paths.
+    assert(n_root_paths == 13)  # Expect 12 root paths.
     assert(n_archive_files == 7)  # Expect these many files to be archived.
 
 
@@ -58,13 +58,12 @@ def test_upload():
     mock_s3_client.create_bucket = Mock()
     mock_s3_client.upload_file = Mock(side_effect=fake_upload)
 
-    key_prefix = "test-archive"
     bucket = "archive.bucket"
     generate_test_set()
 
     result = archiver.traverse(SAMPLE_DATA_PATH, 1)
     items = archiver.transfer_to_archive(result, ARCHIVE_PATH)
-    archiver.upload(bucket, key_prefix, items)
+    archiver.upload(bucket, items)
 
 
 def generate_test_set():
@@ -83,6 +82,10 @@ def generate_test_set():
     test_dir_2 = generate_directory(SAMPLE_DATA_PATH, "test_dir_2")
     nested_dir_1 = generate_directory(test_dir_2, "nested_dir_1")
     generate_test_files(2, nested_dir_1, days_old=6)
+
+    # Hidden directory --- should ignore?
+    test_dir_3 = generate_directory(SAMPLE_DATA_PATH, ".archive")
+    generate_test_files(2, test_dir_3, days_old=6)
 
 
 def generate_directory(root_path: str, directory_name: str):

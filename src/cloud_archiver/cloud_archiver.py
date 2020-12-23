@@ -1,7 +1,9 @@
+import json
 import os
 import time
 import stat
 import math
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
@@ -10,17 +12,23 @@ import boto3
 from rich import box
 from rich.console import Console
 from rich.progress import Progress
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
+
+
+ARCHIVE_DIRECTORY = ".archive"
+CONFIG_PATH = ".archive_config.json"
 
 
 class ArchivePath:
     def __init__(self, path: str, days_since_access: int, should_archive: bool, is_root: bool, is_dir: bool):
         self.key: str = path
         self.days_since_access: int = days_since_access
-        self.should_archive: bool = should_archive
         self.is_root: bool = is_root
         self.is_dir: bool = is_dir
+        partial_path = path.split("/")[-1]
+        self.ignored: bool = partial_path == ARCHIVE_DIRECTORY or partial_path == CONFIG_PATH
+        self.should_archive: bool = not self.ignored and should_archive
 
     def __repr__(self):
         return f"[ArchivePath: {self.key} " \
@@ -30,9 +38,8 @@ class ArchivePath:
 
 
 class CloudArchiver:
+
     SECONDS_PER_DAY = 86400
-    ARCHIVE_S3_BUCKET_NAME = "pixi-cloud-archive"
-    ARCHIVE_PREFIX = ".archive"
 
     def __init__(self):
         self.console = Console()
@@ -41,7 +48,7 @@ class CloudArchiver:
     def archive(self, archive_name: str, root_path: str, archive_path: str):
         paths = self.traverse(root_path)
         archive_items = self.transfer_to_archive(paths, archive_path)
-        self.upload(archive_name, archive_items)
+        self.upload("xxx", archive_name, archive_items)
 
     def traverse(self, root_path: str, threshold_days: int = 1) -> Dict[str, ArchivePath]:
 
@@ -53,9 +60,10 @@ class CloudArchiver:
             key = os.path.join(root_path, partial_path)
             days_since_last_access = self._days_since_last_access(key)
             should_archive = days_since_last_access is not None and days_since_last_access >= threshold_days
+            should_ignore = partial_path == ARCHIVE_DIRECTORY or partial_path == CONFIG_PATH
 
             # Add sub paths.
-            if should_archive:
+            if should_archive and not should_ignore:
                 for sub_key in self._paths_in(key):
                     if key != sub_key:  # Only add sub-paths, and not actual path.
                         paths[sub_key] = ArchivePath(
@@ -87,13 +95,23 @@ class CloudArchiver:
         table.add_column("Archive", justify="right")
         root_path_len = len(root_path) + 1
 
-        sorted_paths: List[ArchivePath] = sorted(paths.values(), key=lambda x: x.days_since_access, reverse=True)
+        sorted_paths: List[ArchivePath] = sorted(
+            paths.values(),
+            key=lambda x: (not x.ignored, x.should_archive, x.days_since_access),
+            reverse=True)
+
         for item in sorted_paths:
             if not item.is_root:
                 continue
 
             sub_path = item.key[root_path_len:]
-            color = "yellow" if item.should_archive else "default"
+
+            color = "default"
+            if item.ignored:
+                color = "dim"
+            if item.should_archive:
+                color = "yellow"
+
             will_archive = "YES" if item.should_archive else "NO"
 
             path = Path(item.key)
@@ -148,9 +166,11 @@ class CloudArchiver:
     def _convert_seconds_to_days(self, seconds: float):
         return math.floor(seconds / self.SECONDS_PER_DAY)
 
-    def transfer_to_archive(self, paths: Dict[str, ArchivePath], archive_path: str):
+    def transfer_to_archive(self, paths: Dict[str, ArchivePath], archive_dir: str):
         # Ensure that the archive folder exists.
+        archive_path = os.path.join(archive_dir, ARCHIVE_DIRECTORY)
         os.makedirs(archive_path, exist_ok=True)
+        self.console.print(f"Archive directory created at [green]{archive_path}[/green].")
         archive_items = []
         n = 0
 
@@ -165,11 +185,12 @@ class CloudArchiver:
             archive_file_dir = os.path.dirname(archive_file_path)
             os.makedirs(archive_file_dir, exist_ok=True)
 
+            self.console.print(f"Moving [yellow]{path.key}[/yellow] to [blue]{archive_file_path}[/blue].")
             shutil.move(path.key, archive_file_path)
             archive_items.append((archive_key_path, archive_file_path))
             n += 1
 
-        self.console.log(f"Transferred {n} files to [green]{archive_path}[/green].")
+        self.console.print(f"Transferred {n} files to [green]{archive_path}[/green].")
         return archive_items
 
     @staticmethod
@@ -180,7 +201,7 @@ class CloudArchiver:
         key = os.path.join(str(access_date.year), str(access_date.month).zfill(2))
         return key
 
-    def upload(self, bucket_name: str, key_prefix: str, archive_items: list):
+    def upload(self, bucket_name: str, archive_items: list):
         # Upload everything under archive_path to S3.
 
         s3_client = self.get_s3_client()
@@ -190,10 +211,9 @@ class CloudArchiver:
             with Progress() as progress:
                 task = progress.add_task("[green]Upload", total=len(archive_items))
                 for key, path in archive_items:
-                    key_with_prefix = f"{key_prefix}/{key}"
-                    s3_client.upload_file(path, self.ARCHIVE_S3_BUCKET_NAME, key_with_prefix)
+                    s3_client.upload_file(path, bucket_name, key)
                     progress.update(task, advance=1)
-            self.console.log(f"Uploaded {len(archive_items)} files to [green]{bucket_name}[/green].")
+            self.console.print(f"Uploaded {len(archive_items)} files to [green]{bucket_name}[/green].")
             return True
         except Exception as e:
             print(f"Error uploading to S3: {e}")
@@ -203,22 +223,72 @@ class CloudArchiver:
     def get_s3_client():
         return boto3.client('s3')
 
+    def load_config(self):
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r") as f:
+                config = json.load(f)
+        else:
+            self.console.print(f"Config file not found at [green]{os.path.join(os.getcwd(), CONFIG_PATH)}[/green].")
+            unique_id = uuid.uuid4().hex[:12]
+            default_bucket_name = os.path.basename(os.getcwd())
+            default_bucket_name = default_bucket_name.strip().strip("/").strip(".").lower()
+            default_bucket_name = f"px-archive.{unique_id}.{default_bucket_name}"
+            bucket_name = Prompt.ask("Enter bucket to use", default=default_bucket_name)
+
+            config = {
+                "bucket": bucket_name,
+                "days": 90
+            }
+
+            with open(CONFIG_PATH, "w") as f:
+                json.dump(config, f, indent=2)
+
+        my_session = boto3.session.Session()
+        region = my_session.region_name
+        profile = my_session.profile_name
+
+        table = Table(title="Configuration", show_header=False, box=box.HORIZONTALS)
+        table.add_column(f"Field")
+        table.add_column("Value")
+        table.add_row("Bucket", config["bucket"])
+        table.add_row("Days", str(config["days"]))
+        table.add_row("AWS Profile", str(profile))
+        table.add_row("AWS Region", str(region))
+        self.console.print(table)
+
+        return config["bucket"], config["days"]
+
+
+def configure():
+    archiver = CloudArchiver()
+    archiver.load_config()
+
 
 def main():
-    print("Running main from cloud archiver")
     archiver = CloudArchiver()
-    root_path = os.getcwd()
-    paths = archiver.traverse(root_path)
+    root_path = "."
+
+    bucket, days = archiver.load_config()
+    paths = archiver.traverse(root_path, days)
     archiver.display_paths(root_path, paths)
-    n_archive_files = sum([1 for x in paths.values() if x.should_archive])
+    n_archive_files = sum([1 for x in paths.values() if x.should_archive and not x.is_dir])
 
     if n_archive_files == 0:
-        archiver.console.log("No files require archiving.")
+        archiver.console.print("No files require archiving.")
     else:
-        archive_path = "archive.d"
-        should_archive = Confirm.ask(f"Do you want to move {n_archive_files} files to archive ({archive_path})?")
-    pass
+        should_archive = Confirm.ask(f"Do you want to move {n_archive_files} files to archive ({ARCHIVE_DIRECTORY})?")
+        if not should_archive:
+            archiver.console.print("No files moved.")
+            return
+
+        files_moved = archiver.transfer_to_archive(paths, root_path)
+        should_upload = Confirm.ask(f"Do you want to upload {len(files_moved)} files to S3 bucket [green]{bucket}?")
+        if not should_upload:
+            archiver.console.print("No files uploaded.")
+            return
+
+        archiver.upload(bucket, files_moved)
 
 
 if __name__ == "__main__":
-    main()
+    configure()
