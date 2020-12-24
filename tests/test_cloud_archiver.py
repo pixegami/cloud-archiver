@@ -5,12 +5,17 @@ import shutil
 from datetime import datetime, timedelta
 from unittest.mock import Mock
 
-from src.cloud_archiver import CloudArchiver
+from src.cloud_archiver.analyze_directory import analyze_directory
 from src.cloud_archiver.display_paths import display_paths
+from src.cloud_archiver.get_items_in_archive import get_items_in_archive
+from src.cloud_archiver.transfer_to_achive import transfer_to_archive
+from src.cloud_archiver.upload_archive import upload
 
 OUTPUT_PATH = "test_output"
 SAMPLE_DATA_PATH = os.path.join(OUTPUT_PATH, "sample_data")
 ARCHIVE_PATH = os.path.join(OUTPUT_PATH, "archive")
+ARCHIVE_FOLDER = ".archive"
+IGNORE_PATHS = [ARCHIVE_FOLDER]
 
 
 def setup():
@@ -25,10 +30,9 @@ def teardown():
 
 def test_traverse():
     # Test that we can fully traverse the directory and figure out the timestamp of each root node.
-    archiver = CloudArchiver()
     generate_test_set()
 
-    result = archiver.traverse(SAMPLE_DATA_PATH, 1)
+    result = analyze_directory(SAMPLE_DATA_PATH, IGNORE_PATHS, threshold_days=1)
     n_root_paths = sum([1 for _, x in result.items() if x.is_root])
     n_archive_files = sum([1 for _, x in result.items() if x.should_archive and not x.is_dir])
 
@@ -39,51 +43,46 @@ def test_traverse():
 
 
 def test_archive():
-    archiver = CloudArchiver()
     generate_test_set()
 
-    result = archiver.traverse(SAMPLE_DATA_PATH, 1)
-    items = archiver.transfer_to_archive(result, ARCHIVE_PATH)
+    result = analyze_directory(SAMPLE_DATA_PATH, IGNORE_PATHS, threshold_days=1)
+    items = transfer_to_archive(result, ARCHIVE_PATH, ARCHIVE_FOLDER)
     assert (len(items) == 7)  # Expect these many files to be archived.
 
 
 def test_upload():
-    archiver = CloudArchiver()
-
     def fake_upload(path, bucket, key):
         print(f"Uploading [{path}, {bucket}, {key}]")
         time.sleep(0.2)
 
     mock_s3_client = Mock()
-    archiver.get_s3_client = Mock(return_value=mock_s3_client)
     mock_s3_client.create_bucket = Mock()
     mock_s3_client.upload_file = Mock(side_effect=fake_upload)
 
     bucket = "archive.bucket"
     generate_test_set()
 
-    result = archiver.traverse(SAMPLE_DATA_PATH, 1)
-    items = archiver.transfer_to_archive(result, ARCHIVE_PATH)
-    archiver.upload(bucket, items)
+    result = analyze_directory(SAMPLE_DATA_PATH, IGNORE_PATHS, threshold_days=1)
+    items = transfer_to_archive(result, ARCHIVE_PATH, ARCHIVE_FOLDER)
+    upload(mock_s3_client, bucket, items)
 
 
 def test_walk_files():
     # Once we transfer files to archives, we should be able to list them and get the keys.
-    archiver = CloudArchiver()
     generate_test_set()
 
-    result = archiver.traverse(SAMPLE_DATA_PATH, 1)
-    original_items = archiver.transfer_to_archive(result, ARCHIVE_PATH)
-    items_from_archive = archiver.get_items_in_archive(ARCHIVE_PATH)
+    result = analyze_directory(SAMPLE_DATA_PATH, IGNORE_PATHS, threshold_days=1)
+    original_items = transfer_to_archive(result, ARCHIVE_PATH, ARCHIVE_FOLDER)
+    items = get_items_in_archive(ARCHIVE_PATH, ARCHIVE_FOLDER)
 
     # Test we get the same number of files.
-    assert(len(original_items) == len(items_from_archive))
+    assert(len(original_items) == len(items))
 
     # Test that the file keys are the same.
     original_map = {k: v for k, v in original_items}
-    for new_k, new_v in items_from_archive:
-        assert(new_k in original_map)
-        assert(original_map[new_k] == new_v)
+    for item in items:
+        assert(item.key in original_map)
+        assert(original_map[item.key] == item.path)
 
 
 def generate_test_set():
