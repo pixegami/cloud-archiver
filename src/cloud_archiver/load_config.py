@@ -19,7 +19,8 @@ def load_config(config_path: str) -> (str, int):
         console.print(f"Config file not found at [green]{os.path.join(os.getcwd(), config_path)}[/green].")
         unique_id = uuid.uuid4().hex[:12]
         default_bucket_name = os.path.basename(os.getcwd())
-        default_bucket_name = default_bucket_name.strip().strip("/").strip(".").lower()
+        default_bucket_name = ''.join(ch for ch in default_bucket_name if ch.isalnum())
+        default_bucket_name = default_bucket_name.strip().lower()
         default_bucket_name = f"px-archive.{unique_id}.{default_bucket_name}"
         bucket_name = Prompt.ask("Enter bucket to use", default=default_bucket_name)
 

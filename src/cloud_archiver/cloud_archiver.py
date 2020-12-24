@@ -1,8 +1,10 @@
+import argparse
 import os
 from typing import List, Dict
 
 import boto3
 
+from .file_generator import generate_test_set
 from .archive_item import ArchiveItem
 from .archive_path import ArchivePath
 from .get_items_in_archive import get_items_in_archive
@@ -18,6 +20,58 @@ from rich.prompt import Confirm
 ARCHIVE_FOLDER = ".archive"
 CONFIG_FILE = ".archive_config.json"
 CONSOLE = Console()
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--generate",
+                        action="store_true",
+                        help="Generates some random text files in this directory.")
+
+    parser.add_argument("--config",
+                        action="store_true",
+                        help="Shows (or creates) the current config.")
+
+    args = parser.parse_args()
+    if args.generate:
+        generate_test_files()
+    elif args.config:
+        configure()
+    else:
+        archive_app()
+
+
+def archive_app():
+    root_path = "."
+
+    _console_section(
+        "Configuration",
+        f"This is the current configuration for px-archiver at this directory {os.getcwd()}. "
+        f"You can edit this configuration at {CONFIG_FILE}.")
+    bucket, days = load_config(CONFIG_FILE)
+
+    # Analyze which files to archive.
+    archive_paths = archiver_analyze(root_path, days)
+
+    # File transfer.
+    archiver_transfer(root_path, archive_paths)
+
+    # Get items still in archive.
+    archived_items = get_items_in_archive(root_path, ARCHIVE_FOLDER)
+
+    # File upload.
+    upload_success = archiver_upload(bucket, archived_items)
+
+    # File deletion.
+    if upload_success:
+        archiver_clean(archived_items)
+
+
+def generate_test_files():
+    _console_print(f"Generating test files in {os.getcwd()}!")
+    generate_test_set(os.getcwd())
 
 
 def configure():
@@ -75,37 +129,11 @@ def archiver_clean(archived_items: List[ArchiveItem]):
         if should_delete:
             for item in archived_items:
                 os.remove(item.path)
-            _console_print(f"{len(archived_items)} files delete from local archive.")
+            _console_print(f"{len(archived_items)} files deleted from local archive.")
         else:
             _console_print(f"No files deleted.")
     else:
         _console_print(f"No files to be deleted.")
-
-
-def main():
-    root_path = "."
-
-    _console_section(
-        "Configuration",
-        f"This is the current configuration for px-archiver at this directory {os.getcwd()}. "
-        f"You can edit this configuration at {CONFIG_FILE}.")
-    bucket, days = load_config(CONFIG_FILE)
-
-    # Analyze which files to archive.
-    archive_paths = archiver_analyze(root_path, days)
-
-    # File transfer.
-    archiver_transfer(root_path, archive_paths)
-
-    # Get items still in archive.
-    archived_items = get_items_in_archive(root_path, ARCHIVE_FOLDER)
-
-    # File upload.
-    upload_success = archiver_upload(bucket, archived_items)
-
-    # File deletion.
-    if upload_success:
-        archiver_clean(archived_items)
 
 
 def _console_section(title: str, description: str = None):
@@ -119,4 +147,4 @@ def _console_print(text: str):
 
 
 if __name__ == "__main__":
-    configure()
+    main()
