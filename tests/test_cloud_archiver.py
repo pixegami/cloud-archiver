@@ -6,19 +6,20 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock
 
 from src.cloud_archiver import CloudArchiver
+from src.cloud_archiver.display_paths import display_paths
 
 OUTPUT_PATH = "test_output"
 SAMPLE_DATA_PATH = os.path.join(OUTPUT_PATH, "sample_data")
 ARCHIVE_PATH = os.path.join(OUTPUT_PATH, "archive")
 
 
-def setup_module():
+def setup():
     os.makedirs(OUTPUT_PATH, exist_ok=True)
     os.makedirs(SAMPLE_DATA_PATH, exist_ok=True)
     os.makedirs(ARCHIVE_PATH, exist_ok=True)
 
 
-def teardown_module():
+def teardown():
     shutil.rmtree(OUTPUT_PATH)
 
 
@@ -32,7 +33,7 @@ def test_traverse():
     n_archive_files = sum([1 for _, x in result.items() if x.should_archive and not x.is_dir])
 
     # Print the result.
-    archiver.display_paths(SAMPLE_DATA_PATH, result)
+    display_paths(SAMPLE_DATA_PATH, result)
     assert(n_root_paths == 13)  # Expect 12 root paths.
     assert(n_archive_files == 7)  # Expect these many files to be archived.
 
@@ -51,7 +52,7 @@ def test_upload():
 
     def fake_upload(path, bucket, key):
         print(f"Uploading [{path}, {bucket}, {key}]")
-        time.sleep(0.5)
+        time.sleep(0.2)
 
     mock_s3_client = Mock()
     archiver.get_s3_client = Mock(return_value=mock_s3_client)

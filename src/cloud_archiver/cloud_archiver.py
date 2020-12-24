@@ -5,10 +5,12 @@ import stat
 import math
 import uuid
 from datetime import datetime
-from pathlib import Path
-from typing import List, Dict
+from typing import Dict
 import shutil
 import boto3
+
+from .display_paths import display_paths
+from .archive_path import ArchivePath
 from rich import box
 from rich.console import Console
 from rich.padding import Padding
@@ -19,23 +21,6 @@ from rich.table import Table
 
 ARCHIVE_DIRECTORY = ".archive"
 CONFIG_PATH = ".archive_config.json"
-
-
-class ArchivePath:
-    def __init__(self, path: str, days_since_access: int, should_archive: bool, is_root: bool, is_dir: bool):
-        self.key: str = path
-        self.days_since_access: int = days_since_access
-        self.is_root: bool = is_root
-        self.is_dir: bool = is_dir
-        partial_path = path.split("/")[-1]
-        self.ignored: bool = partial_path == ARCHIVE_DIRECTORY or partial_path == CONFIG_PATH
-        self.should_archive: bool = not self.ignored and should_archive
-
-    def __repr__(self):
-        return f"[ArchivePath: {self.key} " \
-               f"days={self.days_since_access} " \
-               f"should_archive={self.should_archive} " \
-               f"root={self.is_root}]"
 
 
 class CloudArchiver:
@@ -63,11 +48,13 @@ class CloudArchiver:
                 for sub_key in self._paths_in(key):
                     if key != sub_key:  # Only add sub-paths, and not actual path.
                         paths[sub_key] = ArchivePath(
-                            sub_key, days_since_last_access, should_archive=True, is_root=False, is_dir=False)
+                            sub_key, days_since_last_access, should_archive=True,
+                            is_root=False, is_dir=False, is_ignored=False)
 
             # Add this root directory.
             paths[key] = ArchivePath(
-                key, days_since_last_access, should_archive=should_archive, is_root=True, is_dir=os.path.isdir(key))
+                key, days_since_last_access, should_archive=should_archive,
+                is_root=True, is_dir=os.path.isdir(key), is_ignored=should_ignore)
 
         return paths
 
@@ -82,65 +69,10 @@ class CloudArchiver:
             arr.append(path)
         return arr
 
-    def display_paths(self, root_path: str, paths: Dict[str, ArchivePath]):
-        # Print in terminal the files we're about to archive.
-        abs_path = os.path.abspath(root_path)
-        table = Table(show_header=True, header_style="bold", box=box.HEAVY_EDGE)
-        table.add_column(f"Path (from {abs_path})")
-        table.add_column("Days Idle", justify="right")
-        table.add_column("Size", justify="right")
-        table.add_column("Archive", justify="right")
-        root_path_len = len(root_path) + 1
-
-        sorted_paths: List[ArchivePath] = sorted(
-            paths.values(),
-            key=lambda x: (not x.ignored, x.should_archive, x.days_since_access),
-            reverse=True)
-
-        for item in sorted_paths:
-            if not item.is_root:
-                continue
-
-            sub_path = item.key[root_path_len:]
-
-            color = "default"
-            if item.ignored:
-                color = "dim"
-            if item.should_archive:
-                color = "yellow"
-
-            will_archive = "YES" if item.should_archive else "NO"
-
-            path = Path(item.key)
-            size = sum(f.stat().st_size for f in path.glob('**/*') if f.is_file())
-            if path.is_file():
-                size += path.stat().st_size
-
-            table.add_row(
-                self.with_color(sub_path, color),
-                self.with_color(str(item.days_since_access), color),
-                self.with_color(self.human_readable_bytes(size), color),
-                self.with_color(will_archive, color)
-            )
-
-        self.console.print(table)
-
-    @staticmethod
-    def with_color(x: str, color: str):
-        return f"[{color}]{x}[/{color}]"
-
-    @staticmethod
-    def human_readable_bytes(num: int, suffix='B'):
-        for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
-            if abs(num) < 1024.0:
-                return "%3.1f%s%s" % (num, unit, suffix)
-            num /= 1024.0
-        return "%.1f%s%s" % (num, 'Yi', suffix)
-
     def _days_since_last_access(self, path: str):
         # If this is a directory, the day of last access is the LATEST access date of all files in here.
         if os.path.isdir(path):
-            latest_date = 0
+            latest_date = None
             for child in os.listdir(path):
                 sub_path = os.path.join(path, child)
                 sub_path_last_access = self._days_since_last_access(sub_path)
@@ -152,7 +84,7 @@ class CloudArchiver:
                     latest_date = sub_path_last_access
 
             # Return the latest access date, or 0 if no files were found.
-            return latest_date
+            return latest_date if latest_date is not None else 0
         else:
             file_stats_result = os.stat(path)
             access_time = file_stats_result[stat.ST_ATIME]
@@ -306,7 +238,7 @@ def main():
         f"Scanning for files and folders in this directory which haven't been accessed for over {days} days."
     )
     paths = archiver.traverse(root_path, days)
-    archiver.display_paths(root_path, paths)
+    display_paths(root_path, paths)
     n_archive_files = sum([1 for x in paths.values() if x.should_archive and not x.is_dir])
     archive_path = os.path.abspath(ARCHIVE_DIRECTORY)
 
