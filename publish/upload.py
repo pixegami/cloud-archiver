@@ -8,7 +8,6 @@ def load_credentials():
     if key_repo_user in os.environ and key_repo_pass in os.environ:
         repo_user = os.environ[key_repo_user]
         repo_pass = os.environ[key_repo_pass]
-
         return repo_user, repo_pass
     else:
         print(f"OS Environ: {os.environ}")

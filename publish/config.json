@@ -2,9 +2,8 @@
   "author": "Pixegami",
   "email": "pixegami@gmail.com",
   "description": "A nice package.",
-  "url": "github.com/pixegami",
+  "url": "https://github.com/pixegami/cloud-archiver",
   "scripts": [
-    "px-archive = cloud_archiver:main",
-    "px-archive-configure = cloud_archiver:configure"
+    "px-archive = cloud_archiver:main"
   ]
 }
