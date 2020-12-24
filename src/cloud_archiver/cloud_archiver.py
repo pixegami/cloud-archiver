@@ -11,6 +11,7 @@ import shutil
 import boto3
 from rich import box
 from rich.console import Console
+from rich.padding import Padding
 from rich.progress import Progress
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -44,11 +45,6 @@ class CloudArchiver:
     def __init__(self):
         self.console = Console()
         pass
-
-    def archive(self, archive_name: str, root_path: str, archive_path: str):
-        paths = self.traverse(root_path)
-        archive_items = self.transfer_to_archive(paths, archive_path)
-        self.upload("xxx", archive_name, archive_items)
 
     def traverse(self, root_path: str, threshold_days: int = 1) -> Dict[str, ArchivePath]:
 
@@ -88,8 +84,9 @@ class CloudArchiver:
 
     def display_paths(self, root_path: str, paths: Dict[str, ArchivePath]):
         # Print in terminal the files we're about to archive.
+        abs_path = os.path.abspath(root_path)
         table = Table(show_header=True, header_style="bold", box=box.HEAVY_EDGE)
-        table.add_column(f"Path (from {root_path})")
+        table.add_column(f"Path (from {abs_path})")
         table.add_column("Days Idle", justify="right")
         table.add_column("Size", justify="right")
         table.add_column("Archive", justify="right")
@@ -143,7 +140,7 @@ class CloudArchiver:
     def _days_since_last_access(self, path: str):
         # If this is a directory, the day of last access is the LATEST access date of all files in here.
         if os.path.isdir(path):
-            latest_date = None
+            latest_date = 0
             for child in os.listdir(path):
                 sub_path = os.path.join(path, child)
                 sub_path_last_access = self._days_since_last_access(sub_path)
@@ -192,6 +189,29 @@ class CloudArchiver:
 
         self.console.print(f"Transferred {n} files to [green]{archive_path}[/green].")
         return archive_items
+
+    @staticmethod
+    def get_items_in_archive(archive_dir: str):
+
+        # Get a list of all items in the archive so we can be ready to transfer it to S3.
+        archive_path = os.path.join(archive_dir, ARCHIVE_DIRECTORY)
+        items = []
+
+        # No items to archive.
+        if not os.path.exists(archive_path):
+            return items
+
+        root_length = len(archive_path) + 1
+        for walk_root, walk_dirs, files in os.walk(archive_path):
+            root_head = walk_root[root_length:]
+
+            # For each file, also get the path and restore the key.
+            for walk_file in files:
+                key = os.path.join(root_head, walk_file)
+                file_path = os.path.join(walk_root, walk_file)
+                items.append((key, file_path))
+
+        return items
 
     @staticmethod
     def _create_archive_key(path: str):
@@ -247,16 +267,22 @@ class CloudArchiver:
         region = my_session.region_name
         profile = my_session.profile_name
 
-        table = Table(title="Configuration", show_header=False, box=box.HORIZONTALS)
-        table.add_column(f"Field")
-        table.add_column("Value")
-        table.add_row("Bucket", config["bucket"])
-        table.add_row("Days", str(config["days"]))
-        table.add_row("AWS Profile", str(profile))
-        table.add_row("AWS Region", str(region))
+        table = Table(show_header=False, box=box.MINIMAL)
+        table.add_row("[green]Bucket", config["bucket"])
+        table.add_row("[green]Days", str(config["days"]))
+        table.add_row("[green]AWS Profile", str(profile))
+        table.add_row("[green]AWS Region", str(region))
         self.console.print(table)
 
         return config["bucket"], config["days"]
+
+    def section(self, title: str, description: str=None):
+        self.console.rule(f"[bold]{title}")
+        if description is not None:
+            self.print(f"[dim]{description}")
+
+    def print(self, text: str):
+        self.console.print(Padding(text, 1))
 
 
 def configure():
@@ -268,26 +294,64 @@ def main():
     archiver = CloudArchiver()
     root_path = "."
 
+    archiver.section(
+        "Configuration",
+        f"This is the current configuration for px-archiver at this directory {os.getcwd()}. "
+        f"You can edit this configuration at {CONFIG_PATH}.")
     bucket, days = archiver.load_config()
+
+    # File traversing.
+    archiver.section(
+        "Directory Analysis",
+        f"Scanning for files and folders in this directory which haven't been accessed for over {days} days."
+    )
     paths = archiver.traverse(root_path, days)
     archiver.display_paths(root_path, paths)
     n_archive_files = sum([1 for x in paths.values() if x.should_archive and not x.is_dir])
+    archive_path = os.path.abspath(ARCHIVE_DIRECTORY)
+
+    # File archiving.
 
     if n_archive_files == 0:
-        archiver.console.print("No files require archiving.")
+        archiver.print("No new files require archiving.")
     else:
-        should_archive = Confirm.ask(f"Do you want to move {n_archive_files} files to archive ({ARCHIVE_DIRECTORY})?")
-        if not should_archive:
-            archiver.console.print("No files moved.")
-            return
+        should_archive = Confirm.ask(f"Do you want to move {n_archive_files} files to archive ({archive_path})?")
+        if should_archive:
+            archiver.transfer_to_archive(paths, root_path)
+        else:
+            archiver.print("No files moved.")
 
-        files_moved = archiver.transfer_to_archive(paths, root_path)
-        should_upload = Confirm.ask(f"Do you want to upload {len(files_moved)} files to S3 bucket [green]{bucket}?")
+    # File upload.
+    archiver.section("Uploading")
+    archived_items = archiver.get_items_in_archive(root_path)
+    upload_failure = True
+    if len(archived_items) == 0:
+        archiver.print(f"No archived files in {archive_path} to upload.")
+    else:
+        archiver.print(f"There's currently {len(archived_items)} files in the archive.")
+        should_upload = Confirm.ask(
+            f"Do you want to upload them to S3 bucket [green]{bucket}?")
         if not should_upload:
-            archiver.console.print("No files uploaded.")
-            return
+            archiver.print(f"No files uploaded. {len(archived_items)} files will remain in local archive.")
+            upload_failure = False
+        else:
+            upload_success = archiver.upload(bucket, archived_items)
+            upload_failure = not upload_success
 
-        archiver.upload(bucket, files_moved)
+    # File deletion.
+    archiver.section("Deletion")
+    if len(archived_items) > 0 and not upload_failure:
+        archiver.print(f"There's currently {len(archived_items)} files in the archive.")
+        should_delete = Confirm.ask(
+            f"Do you want to [red]permanently delete[/red] these {len(archived_items)} files locally?")
+        if should_delete:
+            for key, path in archived_items:
+                os.remove(path)
+            archiver.print(f"{len(archived_items)} files delete from local archive.")
+        else:
+            archiver.print(f"No files deleted.")
+    else:
+        archiver.print(f"No files to be deleted.")
 
 
 if __name__ == "__main__":

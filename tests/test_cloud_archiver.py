@@ -66,6 +66,25 @@ def test_upload():
     archiver.upload(bucket, items)
 
 
+def test_walk_files():
+    # Once we transfer files to archives, we should be able to list them and get the keys.
+    archiver = CloudArchiver()
+    generate_test_set()
+
+    result = archiver.traverse(SAMPLE_DATA_PATH, 1)
+    original_items = archiver.transfer_to_archive(result, ARCHIVE_PATH)
+    items_from_archive = archiver.get_items_in_archive(ARCHIVE_PATH)
+
+    # Test we get the same number of files.
+    assert(len(original_items) == len(items_from_archive))
+
+    # Test that the file keys are the same.
+    original_map = {k: v for k, v in original_items}
+    for new_k, new_v in items_from_archive:
+        assert(new_k in original_map)
+        assert(original_map[new_k] == new_v)
+
+
 def generate_test_set():
     # Generate some files in the base directory.
     generate_test_files(5, SAMPLE_DATA_PATH, days_old=0)
