@@ -21,12 +21,15 @@ def load_config(config_path: str) -> (str, int):
         default_bucket_name = os.path.basename(os.getcwd())
         default_bucket_name = ''.join(ch for ch in default_bucket_name if ch.isalnum())
         default_bucket_name = default_bucket_name.strip().lower()
-        default_bucket_name = f"px-archive.{unique_id}.{default_bucket_name}"
+        if len(default_bucket_name) == 0:
+            default_bucket_name = "bucket"
+
+        default_bucket_name = f"cloud-archiver.{unique_id}.{default_bucket_name}"
         bucket_name = Prompt.ask("Enter bucket to use", default=default_bucket_name)
 
         config = {
             "bucket": bucket_name,
-            "days": 90
+            "days": 60
         }
 
         with open(config_path, "w") as f:

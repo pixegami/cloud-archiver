@@ -1,9 +1,9 @@
 {
   "author": "Pixegami",
   "email": "pixegami@gmail.com",
-  "description": "A nice package.",
+  "description": "A script to detect and archive old folders and files in a directory.",
   "url": "https://github.com/pixegami/cloud-archiver",
   "scripts": [
-    "px-archive = cloud_archiver:main"
+    "cloud-archiver = cloud_archiver:main"
   ]
 }

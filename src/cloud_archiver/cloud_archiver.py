@@ -4,6 +4,7 @@ from typing import List, Dict
 
 import boto3
 
+from .display_archive_items import display_archive_items
 from .file_generator import generate_test_set
 from .archive_item import ArchiveItem
 from .archive_path import ArchivePath
@@ -107,6 +108,7 @@ def archiver_upload(bucket: str, archived_items: List[ArchiveItem]) -> bool:
     if len(archived_items) == 0:
         _console_print(f"No archived files in {os.path.abspath(ARCHIVE_FOLDER)} to upload.")
     else:
+        display_archive_items(archived_items, estimate_cost=True)
         _console_print(f"There's currently {len(archived_items)} files in the archive.")
         should_upload = Confirm.ask(
             f"Do you want to upload them to S3 bucket [green]{bucket}?")
@@ -123,6 +125,7 @@ def archiver_upload(bucket: str, archived_items: List[ArchiveItem]) -> bool:
 def archiver_clean(archived_items: List[ArchiveItem]):
     _console_section("Deletion")
     if len(archived_items) > 0:
+        display_archive_items(archived_items, estimate_cost=False)
         _console_print(f"There's currently {len(archived_items)} files in the archive.")
         should_delete = Confirm.ask(
             f"Do you want to [red]permanently delete[/red] these {len(archived_items)} files locally?")

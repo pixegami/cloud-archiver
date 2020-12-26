@@ -4,6 +4,7 @@ import shutil
 from unittest.mock import Mock
 
 from src.cloud_archiver.analyze_directory import analyze_directory
+from src.cloud_archiver.display_archive_items import display_archive_items
 from src.cloud_archiver.display_paths import display_paths
 from src.cloud_archiver.file_generator import generate_test_set
 from src.cloud_archiver.get_items_in_archive import get_items_in_archive
@@ -82,4 +83,15 @@ def test_walk_files():
     for item in items:
         assert(item.key in original_map)
         assert(original_map[item.key] == item.path)
+
+
+def test_display_items():
+    # Once we transfer files to archives, we should be able to list them and get the keys.
+    generate_test_set(SAMPLE_DATA_PATH)
+
+    result = analyze_directory(SAMPLE_DATA_PATH, IGNORE_PATHS, threshold_days=1)
+    transfer_to_archive(result, ARCHIVE_PATH, ARCHIVE_FOLDER)
+    items = get_items_in_archive(ARCHIVE_PATH, ARCHIVE_FOLDER)
+    display_archive_items(items, estimate_cost=True)
+
 
