@@ -27,14 +27,20 @@ PACKAGE_SRC = "../src"
 
 # Work out the sources package.
 src_paths = os.listdir(PACKAGE_SRC)
-src_to_remove = ["__pycache__", "__init__.py", ".pytest_cache"]  # Make sure we don't include this by accident.
+src_to_remove = [
+    "__pycache__",
+    "__init__.py",
+    ".pytest_cache",
+]  # Make sure we don't include this by accident.
 for src_element in src_to_remove:
     if src_element in src_paths:
         src_paths.remove(src_element)
 
 if len(src_paths) != 1:
-    raise Exception(f"Failed to build: Source directory '{PACKAGE_SRC}' must contain exactly one Python package. "
-                    f"Instead, it contains {len(src_paths)}: {src_paths}")
+    raise Exception(
+        f"Failed to build: Source directory '{PACKAGE_SRC}' must contain exactly one Python package. "
+        f"Instead, it contains {len(src_paths)}: {src_paths}"
+    )
 
 PACKAGE_NAME = src_paths[0]
 PACKAGE_PATH = os.path.join(PACKAGE_SRC, PACKAGE_NAME)
@@ -77,19 +83,19 @@ def copy_version_to_package(path: str, v: str):
             if "__version__" not in line:
                 new_file.write(line)
             else:
-                new_file.write("__version__ = \"{}\"\n".format(v))
+                new_file.write('__version__ = "{}"\n'.format(v))
 
 
 copy_version_to_package(PACKAGE_PATH, version)
 
-with open("long_description.md", "r") as f:
+with open("../README.md", "r") as f:
     long_description = f.read()
 
 packages = setuptools.find_packages(PACKAGE_SRC)
 print(f"Packages Discovered: {packages}")
 
 with open("../requirements.txt", "r") as f:
-    requirement_packages = [line.strip('\n') for line in f.readlines()]
+    requirement_packages = [line.strip("\n") for line in f.readlines()]
 print(f"Requirements: {requirement_packages}")
 
 setuptools.setup(
@@ -104,10 +110,6 @@ setuptools.setup(
     packages=packages,
     package_dir={PACKAGE_NAME: PACKAGE_PATH},
     install_requires=requirement_packages,
-    classifiers=[
-        "Programming Language :: Python :: 3.8"
-    ],
-    entry_points={
-        "console_scripts": SCRIPTS
-    }
+    classifiers=["Programming Language :: Python :: 3.8"],
+    entry_points={"console_scripts": SCRIPTS},
 )
