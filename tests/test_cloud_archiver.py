@@ -8,7 +8,7 @@ from src.cloud_archiver.display_archive_items import display_archive_items
 from src.cloud_archiver.display_paths import display_paths
 from src.cloud_archiver.file_generator import generate_test_set
 from src.cloud_archiver.get_items_in_archive import get_items_in_archive
-from src.cloud_archiver.transfer_to_achive import transfer_to_archive
+from src.cloud_archiver.transfer_to_archive import transfer_to_archive
 from src.cloud_archiver.upload_archive import upload
 
 OUTPUT_PATH = "test_output"
@@ -34,12 +34,14 @@ def test_traverse():
 
     result = analyze_directory(SAMPLE_DATA_PATH, IGNORE_PATHS, threshold_days=1)
     n_root_paths = sum([1 for _, x in result.items() if x.is_root])
-    n_archive_files = sum([1 for _, x in result.items() if x.should_archive and not x.is_dir])
+    n_archive_files = sum(
+        [1 for _, x in result.items() if x.should_archive and not x.is_dir]
+    )
 
     # Print the result.
     display_paths(SAMPLE_DATA_PATH, result)
-    assert(n_root_paths == 13)  # Expect 12 root paths.
-    assert(n_archive_files == 7)  # Expect these many files to be archived.
+    assert n_root_paths == 13  # Expect 12 root paths.
+    assert n_archive_files == 7  # Expect these many files to be archived.
 
 
 def test_archive():
@@ -47,7 +49,7 @@ def test_archive():
 
     result = analyze_directory(SAMPLE_DATA_PATH, IGNORE_PATHS, threshold_days=1)
     items = transfer_to_archive(result, ARCHIVE_PATH, ARCHIVE_FOLDER)
-    assert (len(items) == 7)  # Expect these many files to be archived.
+    assert len(items) == 7  # Expect these many files to be archived.
 
 
 def test_upload():
@@ -76,13 +78,13 @@ def test_walk_files():
     items = get_items_in_archive(ARCHIVE_PATH, ARCHIVE_FOLDER)
 
     # Test we get the same number of files.
-    assert(len(original_items) == len(items))
+    assert len(original_items) == len(items)
 
     # Test that the file keys are the same.
     original_map = {k: v for k, v in original_items}
     for item in items:
-        assert(item.key in original_map)
-        assert(original_map[item.key] == item.path)
+        assert item.key in original_map
+        assert original_map[item.key] == item.path
 
 
 def test_display_items():
@@ -93,5 +95,3 @@ def test_display_items():
     transfer_to_archive(result, ARCHIVE_PATH, ARCHIVE_FOLDER)
     items = get_items_in_archive(ARCHIVE_PATH, ARCHIVE_FOLDER)
     display_archive_items(items, estimate_cost=True)
-
-

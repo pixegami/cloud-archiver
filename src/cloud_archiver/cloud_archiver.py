@@ -10,7 +10,7 @@ from .archive_item import ArchiveItem
 from .archive_path import ArchivePath
 from .get_items_in_archive import get_items_in_archive
 from .analyze_directory import analyze_directory
-from .transfer_to_achive import transfer_to_archive
+from .transfer_to_archive import transfer_to_archive
 from .upload_archive import upload
 from .load_config import load_config
 from .display_paths import display_paths
@@ -27,13 +27,15 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--generate",
-                        action="store_true",
-                        help="Generates some random text files in this directory.")
+    parser.add_argument(
+        "--generate",
+        action="store_true",
+        help="Generates some random text files in this directory.",
+    )
 
-    parser.add_argument("--config",
-                        action="store_true",
-                        help="Shows (or creates) the current config.")
+    parser.add_argument(
+        "--config", action="store_true", help="Shows (or creates) the current config."
+    )
 
     args = parser.parse_args()
     if args.generate:
@@ -50,7 +52,8 @@ def archive_app():
     _console_section(
         "Configuration",
         f"This is the current configuration for px-archiver at this directory {os.getcwd()}. "
-        f"You can edit this configuration at {CONFIG_FILE}.")
+        f"You can edit this configuration at {CONFIG_FILE}.",
+    )
     bucket, days = load_config(CONFIG_FILE)
 
     # Analyze which files to archive.
@@ -82,7 +85,7 @@ def configure():
 def archiver_analyze(root_path: str, days: int) -> Dict[str, ArchivePath]:
     _console_section(
         "Directory Analysis",
-        f"Scanning for files and folders in this directory which haven't been accessed for over {days} days."
+        f"Scanning for files and folders in this directory which haven't been accessed for over {days} days.",
     )
     archive_paths = analyze_directory(root_path, [ARCHIVE_FOLDER, CONFIG_FILE], days)
     display_paths(root_path, archive_paths)
@@ -90,12 +93,16 @@ def archiver_analyze(root_path: str, days: int) -> Dict[str, ArchivePath]:
 
 
 def archiver_transfer(root_path: str, archive_paths: Dict[str, ArchivePath]):
-    n_archive_files = sum([1 for x in archive_paths.values() if x.should_archive and not x.is_dir])
+    n_archive_files = sum(
+        [1 for x in archive_paths.values() if x.should_archive and not x.is_dir]
+    )
     if n_archive_files == 0:
         _console_print("No new files require archiving.")
     else:
-        should_archive = Confirm.ask(f"Do you want to move {n_archive_files} "
-                                     f"files to archive ({os.path.abspath(ARCHIVE_FOLDER)})?")
+        should_archive = Confirm.ask(
+            f"Do you want to move {n_archive_files} "
+            f"files to archive ({os.path.abspath(ARCHIVE_FOLDER)})?"
+        )
         if should_archive:
             transfer_to_archive(archive_paths, root_path, ARCHIVE_FOLDER)
         else:
@@ -106,17 +113,22 @@ def archiver_upload(bucket: str, archived_items: List[ArchiveItem]) -> bool:
     _console_section("Uploading")
     upload_success = False
     if len(archived_items) == 0:
-        _console_print(f"No archived files in {os.path.abspath(ARCHIVE_FOLDER)} to upload.")
+        _console_print(
+            f"No archived files in {os.path.abspath(ARCHIVE_FOLDER)} to upload."
+        )
     else:
         display_archive_items(archived_items, estimate_cost=True)
         _console_print(f"There's currently {len(archived_items)} files in the archive.")
         should_upload = Confirm.ask(
-            f"Do you want to upload them to S3 bucket [green]{bucket}?")
+            f"Do you want to upload them to S3 bucket [green]{bucket}?"
+        )
         if not should_upload:
-            _console_print(f"No files uploaded. {len(archived_items)} files will remain in local archive.")
+            _console_print(
+                f"No files uploaded. {len(archived_items)} files will remain in local archive."
+            )
             upload_success = True
         else:
-            client = boto3.client('s3')
+            client = boto3.client("s3")
             upload_success = upload(client, bucket, archived_items)
 
     return upload_success
@@ -128,7 +140,8 @@ def archiver_clean(archived_items: List[ArchiveItem]):
         display_archive_items(archived_items, estimate_cost=False)
         _console_print(f"There's currently {len(archived_items)} files in the archive.")
         should_delete = Confirm.ask(
-            f"Do you want to [red]permanently delete[/red] these {len(archived_items)} files locally?")
+            f"Do you want to [red]permanently delete[/red] these {len(archived_items)} files locally?"
+        )
         if should_delete:
             for item in archived_items:
                 os.remove(item.path)

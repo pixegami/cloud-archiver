@@ -29,7 +29,9 @@ def transfer_to_archive(paths: Dict[str, ArchivePath], root_dir: str, archive_di
         archive_file_dir = os.path.dirname(archive_file_path)
         os.makedirs(archive_file_dir, exist_ok=True)
 
-        console.print(f"Moving [yellow]{path.key}[/yellow] to [blue]{archive_file_path}[/blue].")
+        console.print(
+            f"Moving [yellow]{path.key}[/yellow] to [blue]{archive_file_path}[/blue]."
+        )
         shutil.move(path.key, archive_file_path)
         archive_items.append((archive_key_path, archive_file_path))
         n += 1

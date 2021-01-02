@@ -2,6 +2,8 @@
 
 This is a Python CLI program that archives folders/files within a directory to an AWS S3 bucket. It scans your directory for folders/files rooted there which haven't been accessed for a while, and gives you the option to archive and delete them.
 
+![Terminal App Demo](./cloud-archiver-terminal.gif)
+
 ## Requirements
 
 * Python 3.8
